@@ -24,14 +24,12 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.eclipse.core.runtime.OperationCanceledException;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
@@ -142,7 +140,7 @@ public class LSContentAssistProcessor implements IContentAssistProcessor {
 			// - LSP requests 'textDocument/completions'
 			// - completionLanguageServersFuture
 			final var cancellationSupport = new CancellationSupport();
-			final var completionLanguageServersFuture = this.completionLanguageServersFuture = cancellationSupport.execute(
+			final var completionLanguageServersFuture = cancellationSupport.execute(
 					LanguageServers.forDocument(document).withFilter(capabilities -> capabilities.getCompletionProvider() != null) //
 					.collectAll((w, ls) -> cancellationSupport.execute(ls.getTextDocumentService().completion(param)) //
 							.thenAccept(completion -> {
@@ -160,8 +158,9 @@ public class LSContentAssistProcessor implements IContentAssistProcessor {
 								}
 								return null;
 							})));
-			this.completionCancellationSupport = cancellationSupport;
 
+			this.completionLanguageServersFuture = completionLanguageServersFuture;
+			this.completionCancellationSupport = cancellationSupport;
 			// Wait for the result of all LSP requests 'textDocument/completions', this
 			// future will be canceled with the next completion
 			completionLanguageServersFuture.get();
@@ -220,7 +219,6 @@ public class LSContentAssistProcessor implements IContentAssistProcessor {
 		if (currentDocument != document) {
 			currentDocument = document;
 			triggerCharsCancellationSupport.cancel();
-
 			completionTriggerChars = NO_CHARS;
 			contextTriggerChars = NO_CHARS;
 
@@ -327,27 +325,6 @@ public class LSContentAssistProcessor implements IContentAssistProcessor {
 		return new ContextInformation(information.getLabel(), signature.toString());
 	}
 
-	private void getFuture(@Nullable CompletableFuture<?> future) {
-		if (future == null) {
-			return;
-		}
-
-		try {
-			future.get(TRIGGERS_TIMEOUT, TimeUnit.MILLISECONDS);
-		} catch (InterruptedException e) {
-			LanguageServerPlugin.logError(e);
-			Thread.currentThread().interrupt();
-		} catch (TimeoutException e) {
-			LanguageServerPlugin.logWarning(
-					"Could not get trigger characters due to timeout after " + TRIGGERS_TIMEOUT + " milliseconds", e); //$NON-NLS-1$//$NON-NLS-2$
-		} catch (OperationCanceledException | ResponseErrorException | ExecutionException | CancellationException e) {
-			if (!CancellationUtil.isRequestCancelledException(e)) { // do not report error if the server has cancelled
-																	// the request
-				LanguageServerPlugin.logError(e);
-			}
-		}
-	}
-
 	private static char[] mergeTriggers(char @Nullable [] initialArray,
 			@Nullable Collection<String> additionalTriggers) {
 		if (initialArray == null) {
@@ -374,14 +351,12 @@ public class LSContentAssistProcessor implements IContentAssistProcessor {
 	@Override
 	public char @Nullable [] getCompletionProposalAutoActivationCharacters() {
 		initiateLanguageServers();
-		getFuture(completionLanguageServersFuture);
 		return completionTriggerChars;
 	}
 
 	@Override
 	public char @Nullable [] getContextInformationAutoActivationCharacters() {
 		initiateLanguageServers();
-		getFuture(contextInformationLanguageServersFuture);
 		return contextTriggerChars;
 	}
 
