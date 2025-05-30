@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.lsp4e.operations.semanticTokens;
 
-import static org.eclipse.lsp4e.internal.NullSafetyHelper.castNonNull;
-
 import java.net.URI;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -38,11 +36,13 @@ public final class SemanticTokensClient {
 	}
 
 	public <T> CompletableFuture<Optional<T>> requestFullSemanticTokens(IDocument document, BiFunction<@Nullable SemanticTokensLegend, SemanticTokens, T> callback) {
+		URI uri = LSPEclipseUtils.toUri(document);
+		if (uri == null) {
+			return CompletableFuture.completedFuture(Optional.empty());
+		}
 		LanguageServerDocumentExecutor executor = LanguageServers.forDocument(document)
 				.withFilter(serverCapabilities -> serverCapabilities.getSemanticTokensProvider() != null
 						&& LSPEclipseUtils.hasCapability(serverCapabilities.getSemanticTokensProvider().getFull()));
-
-		URI uri = castNonNull(LSPEclipseUtils.toUri(document));
 		final var semanticTokensParams = new SemanticTokensParams();
 		semanticTokensParams.setTextDocument(LSPEclipseUtils.toTextDocumentIdentifier(uri));
 
